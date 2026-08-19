@@ -969,6 +969,7 @@ body {
   background: var(--main-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
+  transform: translateZ(0); /* promote layer: cache backdrop blur so large Ctrl+A no longer re-rasterizes it */
   display: flex;
   flex-direction: column;
   position: relative;
@@ -1585,6 +1586,7 @@ kbd {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  contain: paint; /* paint containment: isolate textarea/preview repaint from the .main backdrop-blur layer */
 }
 
 /* ============================================================
@@ -1657,6 +1659,16 @@ kbd {
   color: var(--text-muted);
   pointer-events: none;
 }
+
+/* Notice shown when a note is too large to render fully in preview mode. Full text
+   remains available in source mode. Capping the preview DOM keeps selection bounded
+   so Ctrl+A / selection no longer hangs Chromium on very large notes. */
+.md-preview-notice {
+  margin: 4px 0 10px; padding: 8px 12px; border-radius: var(--r-sm);
+  background: var(--accent-soft); color: var(--text-secondary);
+  font-size: 12.5px; line-height: 1.5; user-select: none; -webkit-user-select: none;
+}
+.md-preview-notice-foot { margin-top: 10px; }
 
 /* Scrollbars for both editor modes */
 .md-source-textarea::-webkit-scrollbar,
@@ -2485,27 +2497,6 @@ body.resizing * { cursor: col-resize !important; user-select: none !important; }
 
 .toast-info {
   border-left: 3px solid #3498db;
-}
-
-/* ====== AI 按钮加载动画 ====== */
-#btn-ai-title.loading {
-  position: relative;
-  color: transparent !important;
-  pointer-events: none;
-}
-
-#btn-ai-title.loading::after {
-  content: '';
-  position: absolute;
-  inset: 5px;
-  border: 2px solid var(--text-muted);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: ai-spin 0.6s linear infinite;
-}
-
-@keyframes ai-spin {
-  to { transform: rotate(360deg); }
 }
 
 /* ====== 暗色适配 ====== */

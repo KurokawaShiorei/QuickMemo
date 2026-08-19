@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, Notification, nativeTheme, systemPreferences, Tray, Menu, nativeImage, net, globalShortcut, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, Notification, nativeTheme, systemPreferences, Tray, Menu, nativeImage, net, globalShortcut, shell } = require('electron');
+
 const path = require('path');
 const fs = require('fs');
 const net_module = require('net');
@@ -12,7 +13,11 @@ let reminderTimers = new Map();
 // ====== Tokdash Data Server ======
 let tokdashProcess = null;
 let tokdashStarting = false;
-const TOKDASH_PORT = 55423;
+// 旧端口 55423 落在 Windows 动态保留端口区间内（Hyper-V/WSL 的 "excluded port range"，
+// 实测 55338-55437），会导致 uvicorn 绑定失败：[WinError 10013] WSAEACCES。
+// 这是"统计服务有时不可用"的根因：保留区间在每次开机时动态分配，所以时好时坏。
+// 改用远低于动态区间(49152-65535)的固定端口，避开 Hyper-V/WSL 的保留端口。
+const TOKDASH_PORT = 17523;
 
 function ensureDataFile() {
   if (!fs.existsSync(DATA_FILE)) {
@@ -340,6 +345,7 @@ function createWindow() {
   });
 
   if (process.argv.includes('--dev')) mainWindow.webContents.openDevTools({ mode: 'detach' });
+
 }
 
 // ====== 应用生命周期 ======
@@ -602,6 +608,77 @@ ipcMain.handle('notems-put', async (_, { key, content }) => {
   });
 });
 
+// ====== getnote.top 集成 ======
+ipcMain.handle('getnote-get', async (_, key) => {
+  try {
+    const url = 'https://getnote.top/' + encodeURIComponent(key);
+    const resp = await net.fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      },
+      redirect: 'follow',
+    });
+    const html = await resp.text();
+
+    // getnote.top 用 <textarea id="content"> 显示内容
+    const patterns = [
+      /<textarea[^>]*id=["']content["'][^>]*>([\s\S]*?)<\/textarea>/i,
+      /<textarea[^>]*>([\s\S]*?)<\/textarea>/i,
+      /<pre[^>]*id=["']printable["'][^>]*>([\s\S]*?)<\/pre>/i,
+      /<div[^>]*id=["']content["'][^>]*>([\s\S]*?)<\/div>/i,
+    ];
+    for (const p of patterns) {
+      const m = html.match(p);
+      if (m && m[1].trim().length > 0) return m[1].trim();
+    }
+    return '__DEBUG__:' + html.substring(0, 300);
+  } catch (e) {
+    return '__ERROR__:' + e.message;
+  }
+});
+
+ipcMain.handle('getnote-put', async (_, { key, content }) => {
+  return new Promise((resolve) => {
+    const saveWin = new BrowserWindow({
+      width: 1, height: 1, show: false, frame: false,
+      webPreferences: { nodeIntegration: false, contextIsolation: true },
+    });
+
+    let done = false;
+    const finish = (ok) => { if (!done) { done = true; resolve(ok); try { saveWin.close(); } catch {} } };
+
+    saveWin.webContents.on('did-finish-load', async () => {
+      try {
+        const jsonContent = JSON.stringify(content);
+        await saveWin.webContents.executeJavaScript(`
+          new Promise((res) => {
+            const ta = document.querySelector('textarea');
+            if (!ta) { res(false); return; }
+            ta.value = ${jsonContent};
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            ta.dispatchEvent(new Event('change', { bubbles: true }));
+            // getnote.top 通过 XMLHttpRequest POST 保存
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', window.location.href, true);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+            xhr.onload = function() { res(true); };
+            xhr.onerror = function() { res(false); };
+            xhr.send('text=' + encodeURIComponent(ta.value));
+          });
+        `).then(ok => {
+          setTimeout(() => finish(true), 2000);
+        }).catch(() => finish(false));
+      } catch { finish(false); }
+    });
+
+    saveWin.webContents.on('did-fail-load', () => finish(false));
+
+    saveWin.loadURL('https://getnote.top/' + encodeURIComponent(key));
+  });
+});
+
 nativeTheme.on('updated', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('theme-changed', {
@@ -776,6 +853,31 @@ function startTokdash() {
   ts(0);
 }
 
+function waitForTokdash(port, timeoutMs) {
+  const http = require("http");
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs;
+    let settled = false;
+    const finish = (ok) => { if (!settled) { settled = true; resolve(ok); } };
+    const poll = () => {
+      if (Date.now() >= deadline) return finish(false);
+      let done = false;
+      const retry = () => { if (!done) { done = true; setTimeout(poll, 250); } };
+      let req;
+      try {
+        req = http.get("http://127.0.0.1:" + port + "/health", (res) => {
+          res.resume();
+          if (res.statusCode === 200) { done = true; finish(true); }
+          else retry();
+        });
+      } catch (e) { return retry(); }
+      req.on("error", retry);
+      req.setTimeout(1200, () => { req.destroy(); retry(); });
+    };
+    poll();
+  });
+}
+
 function stopTokdash() {
   if (tokdashProcess) {
     try { tokdashProcess.kill(); } catch (e) {}
@@ -786,10 +888,12 @@ app.whenReady().then(() => {
   // ====== Tokdash IPC Handlers =====
   const http = require("http");
 
-  ipcMain.handle("start-tokdash-server", () => {
+  ipcMain.handle("start-tokdash-server", async () => {
     try {
       startTokdash();
-      return { ok: true };
+      const ok = await waitForTokdash(TOKDASH_PORT, 8000);
+      if (ok) return { ok: true };
+      return { ok: false, error: "Tokdash 服务未能就绪（端口 " + TOKDASH_PORT + " 可能被占用，或 Python/fastapi/uvicorn 依赖缺失）" };
     } catch (e) {
       console.error("[QuickMemo] start-tokdash-server error:", e);
       return { ok: false, error: e.message };

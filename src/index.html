@@ -67,7 +67,7 @@
           <button id="btn-new-note" class="btn btn-primary btn-new-note" aria-label="新建笔记">
             <svg class="btn-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/></svg>
             <span class="btn-label">新建笔记</span>
-            <span class="btn-hint">右键 · note.ms</span>
+            <span class="btn-hint">右键 · 在线笔记</span>
           </button>
 
           <div class="sidebar-section">
@@ -172,7 +172,7 @@
         </button>
         <div class="empty-hints">
           <div class="empty-hint"><kbd>Ctrl</kbd><kbd>S</kbd> 保存</div>
-          <div class="empty-hint"><kbd>右键</kbd> 标题栏 → 从 note.ms</div>
+          <div class="empty-hint"><kbd>右键</kbd> 标题栏 → 拉取在线笔记</div>
         </div>
       </div>
 
@@ -290,8 +290,8 @@
             </div>
             <div class="editor-toggle-item">
               <div class="editor-toggle-label">
-                <span class="editor-toggle-title">Notems 笔记 Markdown</span>
-                <span class="editor-toggle-desc">从 note.ms 获取的笔记也使用 Markdown 渲染</span>
+                <span class="editor-toggle-title">在线笔记 Markdown</span>
+                <span class="editor-toggle-desc">从在线服务获取的笔记也使用 Markdown 渲染</span>
               </div>
               <label class="toggle-switch">
                 <input type="checkbox" id="toggle-md-notems">
@@ -384,7 +384,7 @@
 
           <div class="editor-toolbar">
             <div id="reminder-section" class="reminder-section">
-              <button id="btn-refresh-notems" class="icon-btn" title="从 note.ms 刷新" aria-label="从 note.ms 刷新" style="display:none;">
+              <button id="btn-refresh-notems" class="icon-btn" title="刷新在线内容" aria-label="刷新在线内容" style="display:none;">
                 <svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 10a7 7 0 0 1-14 0M3 7V3h4"/><path d="M3 3l4 4"/></svg>
               </button>
 
@@ -488,18 +488,24 @@
     </div>
   </div>
 
-  <!-- =========== Note.ms 对话框 =========== -->
+  <!-- =========== 在线笔记拉取对话框 =========== -->
   <div id="notems-overlay" class="dialog-overlay" style="display:none;">
     <div id="notems-dialog" class="dialog">
       <div class="dialog-header">
         <span class="dialog-title">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;margin-right:8px;vertical-align:-3px;"><path d="M15 3l2 2L6 17H3v-3L15 3z"/><line x1="13" y1="5" x2="15" y2="7"/></svg>
-          获取 Notems 内容
+          获取在线笔记内容
         </span>
         <button id="notems-close" class="icon-btn" title="关闭" aria-label="关闭">✕</button>
       </div>
       <div class="dialog-body">
-        <p class="notems-hint">输入标识符，将拉取 note.ms/<strong>标识符</strong> 的内容</p>
+        <p class="notems-hint">选择服务并输入标识符，拉取对应在线笔记的内容</p>
+        <div class="notems-service-select" style="margin-bottom:12px;">
+          <select id="notems-service" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--panel-bg);color:var(--text-primary);font-size:13px;">
+            <option value="notems">note.ms</option>
+            <option value="getnote">getnote.top</option>
+          </select>
+        </div>
         <input type="text" id="notems-input" placeholder="输入标识符..." class="text-input" spellcheck="false" autocomplete="off">
         <div id="notems-error" class="notems-error" style="display:none;"></div>
       </div>

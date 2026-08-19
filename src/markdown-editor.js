@@ -37,7 +37,30 @@ const MarkdownEditor = (() => {
     return div.innerHTML.replace(/\n/g, '<br>');
   }
 
-  // 构造一个 <style> 元素注入基础 markdown 样式（如果还没有）
+  // Preview rendering cap: a very large markdown body becomes tens/hundreds of
+  // thousands of DOM nodes after marked parses it. Selecting across that many
+  // nodes (Ctrl+A in preview selects the whole document because the preview
+  // host is contenteditable=false) makes Chromium block the main thread for
+  // many seconds / permanently. Capping the rendered preview DOM keeps
+  // selection bounded; the full text still lives in source mode and in
+  // _lastSourceContent, so editing/copying/createdAt are unaffected.
+  const PREVIEW_CHAR_LIMIT = 60000;
+
+  function renderPreviewHtml(content) {
+    const text = (content || '');
+    if (text.length <= PREVIEW_CHAR_LIMIT) return renderMarkdown(text);
+    // cut at a line boundary near the limit for cleaner markdown
+    let cut = text.lastIndexOf('\n', PREVIEW_CHAR_LIMIT);
+    if (cut < PREVIEW_CHAR_LIMIT * 0.5) cut = PREVIEW_CHAR_LIMIT;
+    const head = text.slice(0, cut);
+    const n = text.length.toLocaleString();
+    const notice = '<div class="md-preview-notice">内容过长（' + n +
+      ' 字），仅预览前 ' + head.length.toLocaleString() +
+      ' 字。请切换到"源码"模式查看 / 编辑 / 复制全文。</div>';
+    const foot = '<div class="md-preview-notice md-preview-notice-foot">…（已截断，共 ' + n + ' 字）</div>';
+    return notice + renderMarkdown(head) + foot;
+  }
+
   function ensureMarkdownStyles() {
     if (document.getElementById('markdown-body-styles')) return;
     const style = document.createElement('style');
@@ -120,7 +143,7 @@ const MarkdownEditor = (() => {
     const div = document.createElement('div');
     div.className = 'md-preview-content markdown-body';
     div.setAttribute('contenteditable', 'false');
-    div.innerHTML = renderMarkdown(content || '');
+    div.innerHTML = renderPreviewHtml(content || '');
     root.appendChild(div);
     scrollEl = div;
 
@@ -138,7 +161,7 @@ const MarkdownEditor = (() => {
     container._getContent = () => container._lastSourceContent || '';
     container._setContent = (val) => {
       container._lastSourceContent = val || '';
-      div.innerHTML = renderMarkdown(val || '');
+      div.innerHTML = renderPreviewHtml(val || '');
     };
     container._onChange = () => {};
     container._scrollTarget = () => div;

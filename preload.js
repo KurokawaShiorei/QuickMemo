@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setPanelAlpha: (alpha) => ipcRenderer.invoke('set-panel-alpha', alpha),
   getNotemsContent: (key) => ipcRenderer.invoke('notems-get', key),
   setNotemsContent: (key, content) => ipcRenderer.invoke('notems-put', { key, content }),
+  getGetnoteContent: (key) => ipcRenderer.invoke('getnote-get', key),
+  setGetnoteContent: (key, content) => ipcRenderer.invoke('getnote-put', { key, content }),
   exportMarkdownFile: (filename, content) => ipcRenderer.invoke('export-markdown-file', { filename, content }),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   startTokdashServer: () => ipcRenderer.invoke("start-tokdash-server"),

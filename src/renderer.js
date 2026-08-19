@@ -8,6 +8,7 @@ const SVG = {
   clock: '<svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7.5"/><polyline points="10 6 10 10 13 13"/></svg>',
   pen: '<svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 3.5l2 2L6 16H4v-2l10.5-10.5z"/></svg>',
   notems: '<svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3l2 2L6 17H3v-3L15 3z"/><line x1="13" y1="5" x2="15" y2="7"/></svg>',
+  getnote: '<svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="16" height="14" rx="2" ry="2"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="12" y2="15"/></svg>',
   checkbox: '<svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="14" height="14" rx="2"/><polyline points="14 8 9 13 6 10"/></svg>',
   file: '<svg class="icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h10l4 4v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><polyline points="14 2 14 8 20 8"/><line x1="6" y1="12" x2="14" y2="12"/><line x1="6" y1="15" x2="11" y2="15"/></svg>',
   // C4 修复：原 updateMaximizeIcon 里的硬编码 SVG 字符串
@@ -21,7 +22,7 @@ let settings = { markdownEnabled: true, notemsMarkdownEnabled: false, theme: 'sy
 
 function isMarkdownEnabledForNote(note) {
   if (note.markdownEnabled !== undefined) return note.markdownEnabled;
-  if (note.notemsKey) return settings.notemsMarkdownEnabled !== false;
+  if (note.notemsKey || note.getnoteKey) return settings.notemsMarkdownEnabled !== false;
   return settings.markdownEnabled !== false;
 }
 let calDate = new Date();
@@ -533,7 +534,7 @@ function setupContextMenu() {
     if (action === 'mul-sel') enterMultiSelect(targetId);
     else if (action === 'rename') {
       const n = state.notes.find(x => x.id === targetId);
-      if (!n || n.notemsKey) return;
+      if (!n || n.notemsKey || n.getnoteKey) return;
       startRename(targetId);
     }
     else if (action === 'delete') deleteNote(targetId);
@@ -606,7 +607,7 @@ function buildNoteItem(note) {
   const timeText = formatTime(note.updatedAt);
   let icon = SVG.note;
   if (note.filePath) icon = SVG.file;
-  if (note.notemsKey) icon = SVG.notems;
+  if (note.notemsKey) icon = SVG.notems; if (note.getnoteKey) icon = SVG.getnote;
   if (reminder) icon = SVG.alarm;
   item.innerHTML = `
     <span class="note-item-drag-handle">${SVG.drag}</span>
@@ -653,7 +654,7 @@ function renderSidebar() {
       const reminder = state.reminders.find(r => r.noteId === note.id && !r.done);
       let icon = SVG.note;
       if (note.filePath) icon = SVG.file;
-      if (note.notemsKey) icon = SVG.notems;
+      if (note.notemsKey) icon = SVG.notems; if (note.getnoteKey) icon = SVG.getnote;
       if (reminder) icon = SVG.alarm;
       if (iconEl) iconEl.innerHTML = icon;
     }
@@ -784,8 +785,8 @@ function renderEditor(id) {
   editor.style.display = 'flex';
   const titleEl = document.getElementById('note-title');
   titleEl.value = note.title || '';
-  titleEl.readOnly = !!note.notemsKey;
-  titleEl.style.cursor = note.notemsKey ? 'default' : '';
+  titleEl.readOnly = !!(note.notemsKey || note.getnoteKey);
+  titleEl.style.cursor = (note.notemsKey || note.getnoteKey) ? 'default' : '';
   // 显示文件路径
   let pathEl = document.getElementById('file-path-indicator');
   if (!pathEl) {
@@ -839,15 +840,15 @@ function renderEditor(id) {
   }
   document.getElementById('reminder-picker').style.display = 'none';
 
-  // 显示/隐藏 note.ms 刷新按钮
+  // 显示/隐藏在线笔记刷新按钮
   const refreshBtn = document.getElementById('btn-refresh-notems');
-  if (note.notemsKey) {
+  if (note.notemsKey || note.getnoteKey) {
     refreshBtn.style.display = 'inline-flex';
-    refreshBtn.dataset.key = note.notemsKey;
+    refreshBtn.dataset.key = note.notemsKey || note.getnoteKey;
+    refreshBtn.dataset.service = note.notemsKey ? 'notems' : 'getnote';
   } else {
     refreshBtn.style.display = 'none';
   }
-
   // Markdown 未开启时隐藏模式切换按钮和模式标识
   const footerToggle = document.getElementById('footer-mode-toggle');
   const noteModeEl = document.getElementById('note-mode');
@@ -863,7 +864,7 @@ function setupNewNote() {
     selectNote(note.id);
     scheduleSave();
   });
-  // 右键弹出「获取 Notems 内容」
+  // 右键弹出「获取在线笔记内容」
   btn.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     openNotemsDialog();
@@ -881,6 +882,7 @@ function setupNewNote() {
 // not on every keystroke. Track with _autoTitled flag.
 function autoTitle(note) {
   if (!note.body) return;
+  if (note.notemsKey || note.getnoteKey) return; // don't auto-title remote notes
   const firstLine = note.body.split('\n')[0].trim();
   if (!firstLine) return;
   // 标题是默认值，或之前就是自动同步的 → 实时跟随第一行
@@ -946,7 +948,7 @@ function setupEditor() {
 
   title.addEventListener('input', () => {
     const note = state.notes.find(n => n.id === state.selectedId);
-    if (!note || note.notemsKey) return;
+    if (!note || note.notemsKey || note.getnoteKey) return;
     note.title = title.value || '未命名';
     // Manual title edit resets auto-title flag so we don't override
     note._autoTitled = true;
@@ -978,10 +980,11 @@ function setupEditor() {
           }
         });
       }
-      if (note && note.notemsKey) {
-        window.electronAPI.setNotemsContent(note.notemsKey, note.body).then(ok => {
-          if (ok) { if (status) status.textContent = '已同步到 note.ms'; }
-          else { if (status) status.textContent = 'note.ms 同步失败'; }
+        if (note && (note.notemsKey || note.getnoteKey)) {
+          const fn = note.notemsKey ? window.electronAPI.setNotemsContent : window.electronAPI.setGetnoteContent;
+          fn(note.notemsKey || note.getnoteKey, note.body).then(ok => {
+          if (ok) { if (status) status.textContent = '已在线同步'; }
+          else { if (status) status.textContent = '在线同步失败'; }
         });
       }
     });
@@ -1071,15 +1074,15 @@ function setupEditor() {
     scheduleSave();
   });
 
-  // ====== note.ms 刷新按钮 ======
+  // ====== 在线笔记刷新按钮 ======
   document.getElementById('btn-refresh-notems').addEventListener('click', async () => {
     const key = document.getElementById('btn-refresh-notems').dataset.key;
     if (!key) return;
-    const ok = await showConfirm('将从 note.ms 重新获取内容，覆盖当前编辑。确定吗？');
+    const ok = await showConfirm('将重新获取在线内容，覆盖当前编辑。确定吗？');
     if (!ok) return;
     const btn = document.getElementById('btn-refresh-notems');
     btn.classList.add('spin');
-    const content = await window.electronAPI.getNotemsContent(key);
+    const content = document.getElementById('btn-refresh-notems').dataset.service === 'getnote' ? await window.electronAPI.getGetnoteContent(key) : await window.electronAPI.getNotemsContent(key);
     btn.classList.remove('spin');
     if (content) {
       const note = state.notes.find(n => n.id === state.selectedId);
@@ -1627,7 +1630,7 @@ function setupSettings() {
     updateStoredSettings();
     // 如果当前打开的普通笔记无显式覆盖，即时重建编辑器
     const note = state.notes.find(n => n.id === state.selectedId);
-    if (note && !note.notemsKey && note.markdownEnabled === undefined) {
+    if (note && !note.notemsKey && !note.getnoteKey && note.markdownEnabled === undefined) {
       const bodyContainer = document.getElementById('note-body-container');
       if (bodyContainer) {
         const content = MarkdownEditor.getContent(bodyContainer);
@@ -1638,13 +1641,13 @@ function setupSettings() {
     }
   });
 
-  // Notems Markdown 开关
+  // 在线笔记 Markdown 开关
   document.getElementById('toggle-md-notems').addEventListener('change', function () {
     settings.notemsMarkdownEnabled = this.checked;
     updateStoredSettings();
-    // 如果当前打开的 Notems 笔记无显式覆盖，即时重建编辑器
+    // 如果当前打开的在线笔记无显式覆盖，即时重建编辑器
     const note = state.notes.find(n => n.id === state.selectedId);
-    if (note && note.notemsKey && note.markdownEnabled === undefined) {
+    if (note && (note.notemsKey || note.getnoteKey) && note.markdownEnabled === undefined) {
       const bodyContainer = document.getElementById('note-body-container');
       if (bodyContainer) {
         const content = MarkdownEditor.getContent(bodyContainer);
@@ -1793,7 +1796,7 @@ function showConfirm(text) {
   });
 }
 
-// ====== Note.ms 对话框 ======
+// ====== 在线笔记对话框 ======
 function openNotemsDialog() {
   const overlay = document.getElementById('notems-overlay');
   const input = document.getElementById('notems-input');
@@ -1825,6 +1828,7 @@ function openNotemsDialog() {
 
   confirmBtn.onclick = async () => {
     const key = input.value.trim();
+    const service = document.getElementById('notems-service').value; // 'notems' or 'getnote'
     if (!key) {
       error.textContent = '请输入标识符';
       error.style.display = 'block';
@@ -1834,7 +1838,7 @@ function openNotemsDialog() {
     confirmBtn.textContent = '获取中…';
     error.style.display = 'none';
 
-    const content = await window.electronAPI.getNotemsContent(key);
+    const content = service === 'getnote' ? await window.electronAPI.getGetnoteContent(key) : await window.electronAPI.getNotemsContent(key);
 
     if (!content) {
       error.textContent = '内容为空，可能是标识符不存在或网络错误';
@@ -1856,10 +1860,11 @@ function openNotemsDialog() {
       id: genNoteId(),
       title: key,
       body: content,
-      notemsKey: key,
+      notemsKey: service === 'notems' ? key : null,
+      getnoteKey: service === 'getnote' ? key : null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      _autoTitled: true, // notems notes have fixed title
+      _autoTitled: true, // remote notes have fixed title
     };
     state.notes.unshift(note);
     selectNote(note.id);
